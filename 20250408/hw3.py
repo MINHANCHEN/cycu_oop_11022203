@@ -1,7 +1,5 @@
 from datetime import datetime, timezone
 
-import sys
-sys.stdout.reconfigure(encoding='utf-8')
 def calculate_julian_info(input_time_str: str):
     """
     輸入格式：'YYYY-MM-DD HH:MM'
@@ -47,4 +45,4 @@ def calculate_julian_info(input_time_str: str):
     print(f"該時刻的 Julian 日期為：{julian_start:.5f}")
     print(f"至今已過太陽日（Julian 日數）：{julian_diff:.5f}")
 
-calculate_julian_info("2025-04-08 18:30")
+calculate_julian_info("2020-04-15 20:30")
