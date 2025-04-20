@@ -1,112 +1,63 @@
-import sys
-sys.stdout.reconfigure(encoding='utf-8')
-# -*- coding: utf-8 -*-
-import pandas as pd
-import re
-from playwright.sync_api import sync_playwright
-import sqlite3
-
-
-class BusRouteInfo:
-    def __init__(self, routeid: str, direction: str = 'go'):
-        self.rid = routeid
-        self.content = None
-        self.url = f'https://ebus.gov.taipei/Route/StopsOfRoute?routeid={routeid}'
-
-        if direction not in ['go', 'come']:
-            raise ValueError("Direction must be 'go' or 'come'")
-
-        self.direction = direction
-
-        self._fetch_content()
-    
-
-    def _fetch_content(self):
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(self.url)
-            
-            if self.direction == 'come':
-                page.click('a.stationlist-come-go-gray.stationlist-come')
-            
-            page.wait_for_timeout(3000)  # wait for 1 second
-            self.content = page.content()
-            browser.close()
-
-
-        # Write the rendered HTML to a file route_{rid}.html
-        with open(f"data/ebus_taipei_{self.rid}.html", "w", encoding="utf-8") as file:
-            file.write(self.content)
-from bs4 import BeautifulSoup
+import requests
 import csv
-import os
 
+def fetch_and_export_bus_stops(route_id):
+    """
+    根據輸入的公車代碼，從臺北市公車公開 API 抓取資料並輸出為 CSV 檔案。
+    
+    :param route_id: 公車代碼（例如 '0100000A00'）
+    """
+    # API URL
+    url = f"https://ebus.gov.taipei/Route/StopsOfRoute?routeid={route_id}"
 
-class BusRouteInfo:
-    def __init__(self, routeid: str, direction: str = 'go'):
-        self.rid = routeid
-        self.content = None
-        self.url = f'https://ebus.gov.taipei/Route/StopsOfRoute?routeid={routeid}'
+    try:
+        # 發送 GET 請求
+        response = requests.get(url)
+        response.raise_for_status()  # 若有錯誤，將引發例外
 
-        if direction not in ['go', 'come']:
-            raise ValueError("Direction must be 'go' or 'come'")
-        self.direction = direction
+        data = response.json()
 
-        self._fetch_content()
+        if not data:
+            print("⚠️ 找不到資料，請確認路線代碼是否正確。")
+            return
 
-    def _fetch_content(self):
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(self.url)
+        # 準備 CSV 檔案名稱
+        csv_filename = f"bus_stops_{route_id}.csv"
 
-            if self.direction == 'come':
-                page.click('a.stationlist-come-go-gray.stationlist-come')
+        # 開始寫入 CSV
+        with open(csv_filename, mode='w', newline='', encoding='utf-8-sig') as file:
+            writer = csv.writer(file)
+            # 寫入欄位名稱
+            writer.writerow(["公車到達時間", "車站序號", "車站名稱", "車站編號", "latitude", "longitude"])
 
-            page.wait_for_timeout(3000)
-            self.content = page.content()
-            browser.close()
+            for direction in data:
+                stops = direction.get("Stops", [])
+                for stop in stops:
+                    arrival_info = stop.get("EstimateTime", "進站中")  # 假設 EstimateTime 為到站時間
+                    stop_number = stop.get("SequenceNo", "")
+                    stop_name = stop.get("StopName", {}).get("Zh_tw", "")
+                    stop_id = stop.get("StopID", "")
+                    latitude = stop.get("StopPosition", {}).get("PositionLat", "")
+                    longitude = stop.get("StopPosition", {}).get("PositionLon", "")
 
-        os.makedirs("data", exist_ok=True)
-        with open(f"data/ebus_taipei_{self.rid}.html", "w", encoding="utf-8") as file:
-            file.write(self.content)
+                    writer.writerow([
+                        arrival_info,
+                        stop_number,
+                        stop_name,
+                        stop_id,
+                        latitude,
+                        longitude
+                    ])
 
-    def parse_and_export_csv(self, output_csv: str = None):
-        soup = BeautifulSoup(self.content, 'html.parser')
-        stop_blocks = soup.select('.stop-info')
+        print(f"✅ 資料已成功儲存為 {csv_filename}")
 
-        result = []
-        for index, block in enumerate(stop_blocks, start=1):
-            arrival_info = block.select_one('.estimate-time').text.strip()
-            stop_name = block.select_one('.stopname-zh').text.strip()
-            stop_id = block.get('data-stopid')
-            lat = block.get('data-latitude')
-            lng = block.get('data-longitude')
+    except requests.exceptions.RequestException as e:
+        print(f"❌ 網路錯誤：{e}")
+    except Exception as e:
+        print(f"❌ 發生錯誤：{e}")
 
-            result.append([
-                arrival_info,
-                index,
-                stop_name,
-                stop_id,
-                lat,
-                lng
-            ])
-
-        output_csv = output_csv or f"data/bus_route_{self.rid}_{self.direction}.csv"
-        with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            for row in result:
-                writer.writerow(row)
-
-        print(f"[INFO] CSV 匯出成功：{output_csv}")
-
-
-# 範例用法
+# 範例使用方式
 if __name__ == "__main__":
-    routeid = input("請輸入公車路線代碼（如 0100000A00）：")
-    direction = input("請輸入方向（go 或 come，預設為 go）：").strip() or "go"
-    bus = BusRouteInfo(routeid, direction)
-    bus.parse_and_export_csv()
+    route_id = input("請輸入公車代碼（例如 0100000A00）：")
+    fetch_and_export_bus_stops(route_id)
 
