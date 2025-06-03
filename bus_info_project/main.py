@@ -2,6 +2,8 @@ import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 from bs4 import BeautifulSoup
 
@@ -25,19 +27,23 @@ class BusRouteFinder:
 def get_bus_eta(route_name):
     options = webdriver.ChromeOptions()
     options.add_argument("--headless")
-    driver = webdriver.Chrome(service=Service("chromedriver.exe"), options=options)
+    driver = webdriver.Chrome(service=Service("./chromedriver"), options=options)
     url = "https://ebus.gov.taipei/ebus"
     driver.get(url)
-    time.sleep(2)
 
-    # 點選「路線查詢」
     try:
-        route_button = driver.find_element(By.LINK_TEXT, "路線查詢")
+        wait = WebDriverWait(driver, 10)
+        # 嘗試用更穩定的 selector 定位「路線查詢」按鈕
+        route_button = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "a[onclick*='RouteSearch']"))
+        )
         route_button.click()
         time.sleep(2)
 
         # 找到輸入框，輸入路線名稱
-        input_box = driver.find_element(By.ID, "RouteSearch")
+        input_box = wait.until(
+            EC.presence_of_element_located((By.ID, "RouteSearch"))
+        )
         input_box.clear()
         input_box.send_keys(route_name)
         time.sleep(1)
