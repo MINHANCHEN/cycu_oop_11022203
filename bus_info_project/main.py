@@ -21,37 +21,44 @@ class BusRouteFinder:
                     })
         return results
 
-def get_bus_eta(route_name, direction):
-    """使用 Playwright 爬取即時到站資訊"""
-    url = f"https://ebus.gov.taipei/Route/StopsOfRoute?routeid={route_name}"
+def get_bus_eta(route_name):
+    """使用 Playwright 爬取即時到站資訊（從首頁互動查詢）"""
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)  # 啟動無頭瀏覽器
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        url = "https://ebus.gov.taipei/ebus"
         page.goto(url)
+        page.wait_for_timeout(3000)
 
         try:
-            # 切換方向（去程或回程）
-            if direction == "come":
-                page.click('a.stationlist-come-go-gray.stationlist-come')
+            # 等待並點擊「找路線」(radio button)
+            page.wait_for_selector('label:has-text("找路線")', timeout=10000)
+            page.click('label:has-text("找路線")')
+            page.wait_for_timeout(500)
 
-            # 等待目標元素加載
-            page.wait_for_selector("li.auto-list-stationlist", timeout=10000)
+            # 輸入路線名稱
+            page.fill('#inputKeyword', route_name)
+            page.wait_for_timeout(1000)
 
-            # 抓取查詢結果
+            # 等待下拉選單出現並點擊第一個建議
+            page.wait_for_selector('ul.ui-autocomplete li', timeout=5000)
+            page.click('ul.ui-autocomplete li')
+
+            # 等待站牌清單載入
+            page.wait_for_selector('li.auto-list-stationlist', timeout=10000)
             content = page.content()
+            with open("debug.html", "w", encoding="utf-8") as f:
+                f.write(content)
+
             soup = BeautifulSoup(content, "html.parser")
             stops = soup.find_all("li", class_="auto-list-stationlist")
-
             if not stops:
                 return "❌ 查無資料或格式變更"
-
-            # 解析站牌資訊
             results = []
             for stop in stops:
                 stop_name = stop.find("span", class_="auto-list-stationlist-place").text.strip()
                 arrival_info = stop.find("span", class_="auto-list-stationlist-position").text.strip()
                 results.append(f"{stop_name} - {arrival_info}")
-
             return "\n".join(results)
         except Exception as e:
             return f"❌ 查詢過程發生錯誤：{e}"
@@ -81,7 +88,7 @@ def main():
         print(f"\n🚌 路線：{route_name}（{direction}）")
         print(f"經過站：{' → '.join(stops)}")
         print("即時動態查詢結果：")
-        eta_info = get_bus_eta(route_name, "go")  # 預設為去程
+        eta_info = get_bus_eta(route_name)  # 只傳 route_name
         print(eta_info)
         print("-" * 40)
 
